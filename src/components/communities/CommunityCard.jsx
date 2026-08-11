@@ -1,0 +1,8 @@
+import { Link } from 'react-router-dom'
+import { SecondaryButton } from '../../design-system'
+
+export const CATEGORY_LABELS = { general: 'Genel sinema ve dizi', franchise: 'Film/dizi evreni', genre: 'Tür topluluğu', movie: 'Film odaklı', tv: 'Dizi odaklı', director: 'Yönetmenler', actor: 'Oyuncular', animation: 'Animasyon' }
+
+export function CommunityCard({ community, membership, pending, onJoin, onLeave }) {
+  return <article className={`community-real-card community-theme-${community.theme || 'sunset'}`}><div className="community-real-cover"><span>{community.name?.charAt(0).toLocaleUpperCase('tr-TR') || 'L'}</span>{community.isArchived ? <small>Arşivlendi</small> : null}</div><div className="community-real-body"><p className="eyebrow">{CATEGORY_LABELS[community.category] || 'Topluluk'}</p><h3><Link to={`/communities/${community.id}`}>{community.name}</Link></h3><p>{community.description}</p><div className="community-real-meta"><span>{community.memberCount || 0} üye</span><span>{community.postCount || 0} gönderi</span>{membership ? <span>{membership.role === 'owner' ? 'Sahip' : membership.role === 'moderator' ? 'Moderatör' : 'Üye'}</span> : null}</div><div className="community-card-actions"><Link to={`/communities/${community.id}`}>Topluluğa git</Link>{!community.isArchived && (membership?.role === 'owner' ? null : membership ? <SecondaryButton onClick={() => onLeave?.(community.id)} disabled={pending === community.id}>Ayrıl</SecondaryButton> : <SecondaryButton onClick={() => onJoin?.(community.id)} disabled={pending === community.id}>Katıl</SecondaryButton>)}</div></div></article>
+}

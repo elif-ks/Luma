@@ -1,0 +1,1 @@
+export function DiaryStats({stats}){return <div className="diary-stats-grid">{[['Toplam kayıt',stats.total],['Bu ay',stats.thisMonth],['Film',stats.movies],['Dizi',stats.tv],['Yeniden izleme',stats.rewatches]].map(([label,value])=><div key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>}

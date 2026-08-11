@@ -1,0 +1,23 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { useSafety } from '../../context/SafetyContext'
+import { deleteCommunityPost, setPostPinned, subscribeToPostLike, toggleCommunityPostLike } from '../../services/communities'
+import { getTmdbImageUrl } from '../../services/tmdbHelpers'
+import { ReportModal } from '../reports/ReportModal'
+import { SpoilerContent } from '../shared/SpoilerContent'
+import { UserAvatar } from '../shared/UserAvatar'
+import { CommunityPoll } from './CommunityPoll'
+import { CommunityPostEditModal } from './CommunityPostEditModal'
+
+function dateLabel(value) { const date = value?.toDate?.(); return date ? date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Şimdi' }
+export function CommunityPostCard({ community, post, profile, membership, detail = false }) {
+  const { user } = useAuth(); const safety = useSafety(); const [liked, setLiked] = useState(false); const [reportOpen, setReportOpen] = useState(false); const [editOpen, setEditOpen] = useState(false); const [pending, setPending] = useState(''); const [error, setError] = useState('')
+  useEffect(() => subscribeToPostLike(community.id, post.id, user?.uid, setLiked), [community.id, post.id, user?.uid])
+  if (safety.loading || safety.blockedUids.has(post.ownerUid)) return null
+  const canModerate = ['owner', 'moderator'].includes(membership?.role); const canDelete = user?.uid === post.ownerUid || canModerate
+  const like = async () => { if (!membership) { setError('Beğenmek için topluluğa katıl.'); return } setPending('like'); try { const result = await toggleCommunityPostLike(community.id, post.id, !liked); if (result?.warning) setError(result.warning) } catch (e) { setError(e.message) } finally { setPending('') } }
+  const remove = async () => { if (!window.confirm('Bu gönderiyi silmek istediğine emin misin?')) return; setPending('delete'); try { await deleteCommunityPost(community.id, post.id) } catch (e) { setError(e.message) } finally { setPending('') } }
+  const pin = async () => { setPending('pin'); try { await setPostPinned(community.id, post.id, !post.isPinned) } catch (e) { setError(e.message) } finally { setPending('') } }
+  return <article className="community-post-card"><header><Link to={profile?.username ? `/profile/${encodeURIComponent(profile.username)}` : '#'}><UserAvatar profile={profile} name={profile?.username || 'Luma kullanıcısı'} className="avatar-sm"/></Link><div><strong>{profile?.username || 'Luma kullanıcısı'}</strong><span>{dateLabel(post.createdAt)} · <Link to={`/communities/${community.id}`}>{community.name}</Link></span></div>{post.isPinned ? <span className="community-pinned">Sabitlendi</span> : null}</header><SpoilerContent id={post.id} spoiler={post.spoiler} warning="Bu gönderi spoiler içeriyor."><div><p className="community-post-text">{post.content}</p>{post.mediaKey ? <Link className="community-media" to={`/${post.mediaType}/${post.mediaId}`}>{post.posterPath ? <img src={getTmdbImageUrl(post.posterPath, 'w185')} alt=""/> : <span>L</span>}<strong>{post.mediaTitle}</strong></Link> : null}{post.type === 'poll' && post.pollId ? <CommunityPoll communityId={community.id} pollId={post.pollId} membership={membership} archived={community.isArchived}/> : null}</div></SpoilerContent><footer><button type="button" className={liked ? 'active' : ''} aria-pressed={liked} disabled={Boolean(pending) || community.isArchived} onClick={like}>♡ {post.likeCount || 0}</button><Link to={`/communities/${community.id}/posts/${post.id}`}>💬 {post.replyCount || 0}</Link>{canModerate ? <button type="button" disabled={Boolean(pending)} onClick={pin}>{post.isPinned ? 'Sabitlemeyi kaldır' : 'Gönderiyi sabitle'}</button> : null}{user?.uid === post.ownerUid && post.type === 'discussion' ? <button type="button" disabled={community.isArchived} onClick={() => setEditOpen(true)}>Düzenle</button> : null}{canDelete ? <button type="button" disabled={Boolean(pending)} onClick={remove}>Sil</button> : null}{user?.uid !== post.ownerUid ? <button type="button" onClick={() => setReportOpen(true)}>Gönderiyi şikâyet et</button> : null}{!detail ? <Link to={`/communities/${community.id}/posts/${post.id}`}>Gönderiyi aç</Link> : null}</footer>{error ? <p className="auth-message auth-message-error">{error}</p> : null}{reportOpen ? <ReportModal targetType="community_post" targetId={post.id} parentId={community.id} onClose={() => setReportOpen(false)}/> : null}{editOpen ? <CommunityPostEditModal communityId={community.id} post={post} onClose={() => setEditOpen(false)}/> : null}</article>
+}

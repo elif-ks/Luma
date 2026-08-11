@@ -1,0 +1,48 @@
+:root {
+  --color-bg: #09090f;
+  --color-surface: #151520;
+  --color-surface-2: #1d1d2a;
+  --color-text-primary: #f7f5ff;
+  --color-text-secondary: #8e8aa6;
+  --color-border: rgba(255,255,255,.08);
+  --color-primary-gradient-start: #ff5e7d;
+  --color-primary-gradient-end: #ff8a4c;
+  --color-secondary-accent: #b66cff;
+  --color-success: #58e5c1;
+  --color-warning: #ffc857;
+
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 56px;
+
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.2);
+  --shadow-medium: 0 18px 48px rgba(0, 0, 0, 0.28);
+  --shadow-strong: 0 24px 64px rgba(0, 0, 0, 0.34);
+
+  --transition-fast: 180ms ease;
+  --transition-medium: 240ms ease;
+  --transition-slow: 360ms ease;
+
+  --font-display: 800 2.75rem/1.02 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading-xl: 700 2rem/1.12 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading-lg: 700 1.5rem/1.2 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading-md: 600 1.125rem/1.3 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading-sm: 600 0.95rem/1.3 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body-lg: 500 1rem/1.65 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: 400 0.95rem/1.6 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-caption: 400 0.8rem/1.4 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  --gradient-primary: linear-gradient(135deg, var(--color-primary-gradient-start), var(--color-primary-gradient-end));
+  --gradient-secondary: linear-gradient(135deg, var(--color-secondary-accent), #6d7cff);
+}

@@ -1,0 +1,4 @@
+import { useState } from 'react'
+import { ActivityFeed } from '../components/activity/ActivityFeed'
+
+export function ActivityPage(){const[tab,setTab]=useState('following');return <div className="page-stack"><section className="review-hero-card"><p className="eyebrow">Sosyal keşif</p><h1>Aktivite Akışı</h1><p>Takip ettiğin kullanıcıların herkese açık film ve dizi hareketleri.</p></section><section className="profile-section-card"><div className="activity-tabs" role="tablist" aria-label="Aktivite filtreleri"><button type="button" role="tab" aria-selected={tab==='following'} className={tab==='following'?'active':''} onClick={()=>setTab('following')}>Takip ettiklerim</button><button type="button" role="tab" aria-selected={tab==='own'} className={tab==='own'?'active':''} onClick={()=>setTab('own')}>Kendi aktivitelerim</button></div><ActivityFeed mode={tab}/></section></div>}

@@ -1,0 +1,1162 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function noBlockBetween(firstUid, secondUid) {
+      return firstUid == secondUid || (
+        !exists(/databases/$(database)/documents/users/$(firstUid)/blocks/$(secondUid))
+        && !exists(/databases/$(database)/documents/users/$(secondUid)/blocks/$(firstUid))
+      );
+    }
+
+    function validVisibility(value) {
+      return value in ['public', 'private', 'followers'];
+    }
+
+    function listDocument(listId) {
+      return get(/databases/$(database)/documents/lists/$(listId));
+    }
+
+    function listMemberDocument(listId, uid) {
+      return get(/databases/$(database)/documents/lists/$(listId)/members/$(uid));
+    }
+
+    function listAfter(listId) {
+      return getAfter(/databases/$(database)/documents/lists/$(listId));
+    }
+
+    function isListOwner(listId) {
+      return isSignedIn() && listDocument(listId).data.ownerUid == request.auth.uid;
+    }
+
+    function isListMember(listId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/lists/$(listId)/members/$(request.auth.uid));
+    }
+
+    function isListEditor(listId) {
+      return isListOwner(listId)
+        || (isListMember(listId) && listMemberDocument(listId, request.auth.uid).data.role == 'editor');
+    }
+
+    function conversationDocument(conversationId) {
+      return get(/databases/$(database)/documents/conversations/$(conversationId));
+    }
+
+    function isConversationParticipant(conversationId) {
+      return isSignedIn() && request.auth.uid in conversationDocument(conversationId).data.participants;
+    }
+
+    function communityDocument(communityId) {
+      return get(/databases/$(database)/documents/communities/$(communityId));
+    }
+
+    function communityMemberDocument(communityId, uid) {
+      return get(/databases/$(database)/documents/communities/$(communityId)/members/$(uid));
+    }
+
+    function isCommunityOwner(communityId) {
+      return isSignedIn() && communityDocument(communityId).data.ownerUid == request.auth.uid;
+    }
+
+    function isCommunityMember(communityId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid));
+    }
+
+    function isCommunityModerator(communityId) {
+      return isCommunityOwner(communityId)
+        || (isCommunityMember(communityId)
+          && communityMemberDocument(communityId, request.auth.uid).data.role == 'moderator');
+    }
+
+    function communityIsActive(communityId) {
+      return communityDocument(communityId).data.isPublic == true
+        && communityDocument(communityId).data.isArchived == false;
+    }
+
+    match /{path=**}/members/{memberUid} {
+      allow list: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.query.limit != null
+        && request.query.limit <= 100;
+    }
+
+    function validUserFields(data) {
+      return data.keys().hasOnly([
+        'uid',
+        'username',
+        'usernameLower',
+        'bio',
+        'photoURL',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.uid is string
+      && data.username is string
+      && data.usernameLower is string
+      && data.bio is string
+      && data.photoURL is string
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function usernameAfter(usernameLower) {
+      return getAfter(/databases/$(database)/documents/usernames/$(usernameLower));
+    }
+
+    function userAfter(uid) {
+      return getAfter(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function validLibraryFields(data, uid, mediaKey) {
+      return data.keys().hasOnly([
+        'uid',
+        'mediaId',
+        'mediaType',
+        'title',
+        'posterPath',
+        'releaseDate',
+        'favorite',
+        'watched',
+        'watchlist',
+        'favoriteAt',
+        'watchedAt',
+        'watchlistAt',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.uid == uid
+      && data.mediaId is string
+      && data.mediaType in ['movie', 'tv']
+      && mediaKey == data.mediaType + '_' + data.mediaId
+      && data.title is string
+      && data.posterPath is string
+      && data.releaseDate is string
+      && data.favorite is bool
+      && data.watched is bool
+      && data.watchlist is bool
+      && (data.favoriteAt == null || data.favoriteAt is timestamp)
+      && (data.watchedAt == null || data.watchedAt is timestamp)
+      && (data.watchlistAt == null || data.watchlistAt is timestamp)
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function validPublicLibrarySettings(data, uid) {
+      return data.keys().hasOnly(['uid', 'showFavorites', 'showWatched', 'updatedAt'])
+        && data.uid == uid
+        && data.showFavorites is bool
+        && data.showWatched is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function validPublicMedia(data, uid, mediaKey) {
+      return data.keys().hasOnly(['uid', 'mediaKey', 'mediaType', 'mediaId', 'title', 'posterPath', 'year', 'createdAt', 'updatedAt'])
+        && data.uid == uid
+        && data.mediaKey == mediaKey
+        && data.mediaType in ['movie', 'tv']
+        && data.mediaId is string
+        && mediaKey == data.mediaType + '_' + data.mediaId
+        && data.title is string
+        && data.posterPath is string
+        && data.year is string
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function libraryPublicSettings(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/publicSettings/library);
+    }
+
+    match /users/{uid} {
+      allow read: if true;
+
+      allow create: if isOwner(uid)
+        && validUserFields(request.resource.data)
+        && request.resource.data.uid == uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && usernameAfter(request.resource.data.usernameLower).data.uid == uid;
+
+      allow update: if isOwner(uid)
+        && validUserFields(request.resource.data)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.uid == uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && usernameAfter(request.resource.data.usernameLower).data.uid == uid;
+
+      allow delete: if false;
+
+      match /library/{mediaKey} {
+        allow read: if isOwner(uid);
+
+        allow create: if isOwner(uid)
+          && validLibraryFields(request.resource.data, uid, mediaKey)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if isOwner(uid)
+          && validLibraryFields(request.resource.data, uid, mediaKey)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+
+        allow delete: if isOwner(uid)
+          && resource.data.uid == uid
+          && resource.data.uid == request.auth.uid;
+      }
+
+      match /publicSettings/{settingId} {
+        allow read: if settingId == 'library';
+        allow create: if settingId == 'library' && isOwner(uid)
+          && validPublicLibrarySettings(request.resource.data, uid)
+          && request.resource.data.updatedAt == request.time;
+        allow update: if settingId == 'library' && isOwner(uid)
+          && validPublicLibrarySettings(request.resource.data, uid)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+
+      match /publicFavorites/{mediaKey} {
+        allow read: if isOwner(uid)
+          || (exists(/databases/$(database)/documents/users/$(uid)/publicSettings/library)
+            && libraryPublicSettings(uid).data.showFavorites == true);
+        allow create: if isOwner(uid) && validPublicMedia(request.resource.data, uid, mediaKey)
+          && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(uid) && validPublicMedia(request.resource.data, uid, mediaKey)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.mediaKey == resource.data.mediaKey
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+      }
+
+      match /publicWatched/{mediaKey} {
+        allow read: if isOwner(uid)
+          || (exists(/databases/$(database)/documents/users/$(uid)/publicSettings/library)
+            && libraryPublicSettings(uid).data.showWatched == true);
+        allow create: if isOwner(uid) && validPublicMedia(request.resource.data, uid, mediaKey)
+          && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(uid) && validPublicMedia(request.resource.data, uid, mediaKey)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.mediaKey == resource.data.mediaKey
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+      }
+
+      match /diary/{entryId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly([
+            'uid', 'mediaKey', 'mediaId', 'mediaType', 'title', 'posterPath',
+            'releaseDate', 'watchedAt', 'rating', 'rewatch', 'note', 'tags',
+            'visibility', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.uid == uid
+          && request.resource.data.mediaType in ['movie', 'tv']
+          && request.resource.data.mediaId is string
+          && request.resource.data.mediaKey == request.resource.data.mediaType + '_' + request.resource.data.mediaId
+          && request.resource.data.title is string
+          && request.resource.data.posterPath is string
+          && request.resource.data.releaseDate is string
+          && request.resource.data.watchedAt is timestamp
+          && (request.resource.data.rating == null || (request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5))
+          && request.resource.data.rewatch is bool
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 500
+          && request.resource.data.tags is list
+          && request.resource.data.tags.size() <= 10
+          && request.resource.data.visibility == 'private'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(uid)
+          && request.resource.data.keys().hasOnly([
+            'uid', 'mediaKey', 'mediaId', 'mediaType', 'title', 'posterPath',
+            'releaseDate', 'watchedAt', 'rating', 'rewatch', 'note', 'tags',
+            'visibility', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.mediaKey == resource.data.mediaKey
+          && request.resource.data.mediaId == resource.data.mediaId
+          && request.resource.data.mediaType == resource.data.mediaType
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.watchedAt is timestamp
+          && (request.resource.data.rating == null || (request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5))
+          && request.resource.data.rewatch is bool
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 500
+          && request.resource.data.tags is list
+          && request.resource.data.tags.size() <= 10
+          && request.resource.data.visibility == 'private'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'posterPath', 'releaseDate', 'watchedAt', 'rating', 'rewatch',
+            'note', 'tags', 'visibility', 'updatedAt'
+          ]);
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isOwner(uid);
+        allow create: if isSignedIn()
+          && request.resource.data.keys().hasAll(['type', 'actorUid', 'targetType', 'targetId', 'read', 'readAt', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['type', 'actorUid', 'targetType', 'targetId', 'sourceId', 'contextId', 'read', 'readAt', 'createdAt'])
+          && ((request.resource.data.type in ['post_reply', 'message', 'community_post_like'] && request.resource.data.keys().hasAll(['sourceId']) && !request.resource.data.keys().hasAny(['contextId']))
+            || (request.resource.data.type == 'community_post_reply' && request.resource.data.keys().hasAll(['sourceId', 'contextId']))
+            || (!(request.resource.data.type in ['post_reply', 'message', 'community_post_like', 'community_post_reply']) && !request.resource.data.keys().hasAny(['sourceId', 'contextId'])))
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actorUid != uid
+          && request.resource.data.type in ['follow', 'post_like', 'post_reply', 'repost', 'review_like', 'list_like', 'list_member', 'message', 'community_post_like', 'community_post_reply']
+          && request.resource.data.targetType in ['user', 'post', 'review', 'list', 'conversation', 'community_post']
+          && request.resource.data.targetId is string
+          && request.resource.data.read == false
+          && request.resource.data.readAt == null
+          && request.resource.data.createdAt == request.time
+          && !exists(/databases/$(database)/documents/users/$(uid)/blocks/$(request.auth.uid))
+          && !exists(/databases/$(database)/documents/users/$(request.auth.uid)/blocks/$(uid))
+          && (
+            (request.resource.data.type == 'follow'
+              && request.resource.data.targetType == 'user'
+              && request.resource.data.targetId == request.auth.uid
+              && notificationId == 'follow_' + request.auth.uid
+              && exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + uid))
+              && get(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + uid)).data.followerUid == request.auth.uid
+              && get(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + uid)).data.followingUid == uid)
+            || (request.resource.data.type == 'post_like'
+              && request.resource.data.targetType == 'post'
+              && notificationId == 'postLike_' + request.resource.data.targetId + '_' + request.auth.uid
+              && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.ownerUid == uid
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.visibility == 'public'
+              && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId)/likes/$(request.auth.uid)))
+            || (request.resource.data.type == 'repost'
+              && request.resource.data.targetType == 'post'
+              && notificationId == 'repost_' + request.resource.data.targetId + '_' + request.auth.uid
+              && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.ownerUid == uid
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.visibility == 'public'
+              && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId)/reposts/$(request.auth.uid)))
+            || (request.resource.data.type == 'post_reply'
+              && request.resource.data.targetType == 'post'
+              && request.resource.data.sourceId is string
+              && request.resource.data.sourceId.size() > 0
+              && request.resource.data.sourceId.size() <= 1500
+              && notificationId == 'postReply_' + request.resource.data.targetId + '_' + request.resource.data.sourceId
+              && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.ownerUid == uid
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.visibility == 'public'
+              && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId)/replies/$(request.resource.data.sourceId))
+              && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)/replies/$(request.resource.data.sourceId)).data.ownerUid == request.auth.uid)
+            || (request.resource.data.type == 'review_like'
+              && request.resource.data.targetType == 'review'
+              && notificationId == 'reviewLike_' + request.resource.data.targetId + '_' + request.auth.uid
+              && exists(/databases/$(database)/documents/reviews/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/reviews/$(request.resource.data.targetId)).data.uid == uid
+              && exists(/databases/$(database)/documents/reviews/$(request.resource.data.targetId)/likes/$(request.auth.uid)))
+            || (request.resource.data.type == 'list_like'
+              && request.resource.data.targetType == 'list'
+              && notificationId == 'listLike_' + request.resource.data.targetId + '_' + request.auth.uid
+              && exists(/databases/$(database)/documents/lists/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/lists/$(request.resource.data.targetId)).data.ownerUid == uid
+              && get(/databases/$(database)/documents/lists/$(request.resource.data.targetId)).data.isPublic == true
+              && exists(/databases/$(database)/documents/lists/$(request.resource.data.targetId)/likes/$(request.auth.uid)))
+            || (request.resource.data.type == 'list_member'
+              && request.resource.data.targetType == 'list'
+              && notificationId == 'listMember_' + request.resource.data.targetId
+              && exists(/databases/$(database)/documents/lists/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/lists/$(request.resource.data.targetId)).data.ownerUid == request.auth.uid
+              && get(/databases/$(database)/documents/lists/$(request.resource.data.targetId)).data.ownerUid != uid
+              && exists(/databases/$(database)/documents/lists/$(request.resource.data.targetId)/members/$(uid)))
+            || (request.resource.data.type == 'message'
+              && request.resource.data.targetType == 'conversation'
+              && request.resource.data.sourceId is string
+              && request.resource.data.sourceId.size() > 0
+              && request.resource.data.sourceId.size() <= 1500
+              && notificationId == 'message_' + request.resource.data.targetId
+              && exists(/databases/$(database)/documents/conversations/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)).data.participants is list
+              && get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)).data.participants.size() == 2
+              && request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)).data.participants
+              && uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)).data.participants
+              && get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)).data.lastMessageId == request.resource.data.sourceId
+              && get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)).data.lastSenderUid == request.auth.uid
+              && exists(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)/messages/$(request.resource.data.sourceId))
+              && get(/databases/$(database)/documents/conversations/$(request.resource.data.targetId)/messages/$(request.resource.data.sourceId)).data.senderUid == request.auth.uid)
+            || (request.resource.data.type == 'community_post_like'
+              && request.resource.data.targetType == 'community_post'
+              && notificationId == 'communityPostLike_' + request.resource.data.targetId + '_' + request.resource.data.sourceId + '_' + request.auth.uid
+              && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)).data.isPublic == true
+              && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId))
+              && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId)).data.ownerUid == uid
+              && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId)/likes/$(request.auth.uid)))
+            || (request.resource.data.type == 'community_post_reply'
+              && request.resource.data.targetType == 'community_post'
+              && notificationId == 'communityPostReply_' + request.resource.data.targetId + '_' + request.resource.data.sourceId + '_' + request.resource.data.contextId
+              && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId))
+              && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)).data.isPublic == true
+              && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId))
+              && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId)).data.ownerUid == uid
+              && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId)/replies/$(request.resource.data.contextId))
+              && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)/posts/$(request.resource.data.sourceId)/replies/$(request.resource.data.contextId)).data.ownerUid == request.auth.uid)
+          );
+        allow update: if (isOwner(uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+            && request.resource.data.read is bool
+            && ((request.resource.data.read == true && request.resource.data.readAt == request.time)
+              || (request.resource.data.read == false && request.resource.data.readAt == null)))
+          || (isSignedIn()
+            && resource.data.type == 'message'
+            && resource.data.actorUid == request.auth.uid
+            && request.resource.data.actorUid == request.auth.uid
+            && request.resource.data.type == resource.data.type
+            && request.resource.data.targetType == resource.data.targetType
+            && request.resource.data.targetId == resource.data.targetId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sourceId', 'read', 'readAt', 'createdAt'])
+            && notificationId == 'message_' + resource.data.targetId
+            && request.resource.data.read == false
+            && request.resource.data.readAt == null
+            && request.resource.data.createdAt == request.time
+            && !exists(/databases/$(database)/documents/users/$(uid)/blocks/$(request.auth.uid))
+            && !exists(/databases/$(database)/documents/users/$(request.auth.uid)/blocks/$(uid))
+            && exists(/databases/$(database)/documents/conversations/$(resource.data.targetId))
+            && get(/databases/$(database)/documents/conversations/$(resource.data.targetId)).data.participants is list
+            && get(/databases/$(database)/documents/conversations/$(resource.data.targetId)).data.participants.size() == 2
+            && request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.targetId)).data.participants
+            && uid in get(/databases/$(database)/documents/conversations/$(resource.data.targetId)).data.participants
+            && request.resource.data.sourceId == get(/databases/$(database)/documents/conversations/$(resource.data.targetId)).data.lastMessageId
+            && get(/databases/$(database)/documents/conversations/$(resource.data.targetId)).data.lastSenderUid == request.auth.uid
+            && exists(/databases/$(database)/documents/conversations/$(resource.data.targetId)/messages/$(request.resource.data.sourceId))
+            && get(/databases/$(database)/documents/conversations/$(resource.data.targetId)/messages/$(request.resource.data.sourceId)).data.senderUid == request.auth.uid);
+        allow delete: if isOwner(uid)
+          || (isSignedIn() && resource.data.actorUid == request.auth.uid);
+      }
+
+      match /blocks/{targetUid} {
+        allow get: if isOwner(uid) || (isSignedIn() && request.auth.uid == targetUid);
+        allow list: if isOwner(uid) || (isSignedIn() && request.auth.uid == resource.data.targetUid);
+        allow delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && targetUid != uid
+          && request.resource.data.keys().hasOnly(['targetUid', 'createdAt'])
+          && request.resource.data.targetUid == targetUid
+          && request.resource.data.createdAt == request.time;
+        allow update: if false;
+      }
+
+      match /mutes/{targetUid} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && targetUid != uid
+          && request.resource.data.keys().hasOnly(['targetUid', 'createdAt'])
+          && request.resource.data.targetUid == targetUid
+          && request.resource.data.createdAt == request.time;
+        allow update: if false;
+      }
+
+      match /private/{documentId} {
+        allow read: if documentId == 'settings' && isOwner(uid);
+        allow create, update: if documentId == 'settings'
+          && isOwner(uid)
+          && request.resource.data.keys().hasOnly([
+            'accountPrivacy', 'spoilerFilter', 'notificationPreferences',
+            'messagePermission', 'theme', 'updatedAt'
+          ])
+          && request.resource.data.accountPrivacy in ['public', 'private']
+          && request.resource.data.spoilerFilter is bool
+          && request.resource.data.notificationPreferences is map
+          && request.resource.data.messagePermission in ['everyone', 'following', 'nobody']
+          && request.resource.data.theme in ['dark', 'system']
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if documentId == 'settings' && isOwner(uid);
+      }
+    }
+
+    match /usernames/{usernameLower} {
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && userAfter(request.auth.uid).data.uid == request.auth.uid
+        && userAfter(request.auth.uid).data.usernameLower == usernameLower;
+
+      allow update: if false;
+
+      allow delete: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && userAfter(request.auth.uid).data.uid == request.auth.uid
+        && userAfter(request.auth.uid).data.usernameLower != usernameLower;
+    }
+
+    function validReviewFields(data, reviewId) {
+      return data.keys().hasOnly([
+        'uid', 'mediaKey', 'mediaId', 'mediaType', 'title', 'posterPath',
+        'releaseDate', 'rating', 'content', 'spoiler', 'createdAt', 'updatedAt'
+      ])
+      && data.uid is string
+      && data.mediaId is string
+      && data.mediaType in ['movie', 'tv']
+      && data.mediaKey == data.mediaType + '_' + data.mediaId
+      && reviewId == data.uid + '*' + data.mediaType + '*' + data.mediaId
+      && data.title is string
+      && data.posterPath is string
+      && data.releaseDate is string
+      && data.rating is int
+      && data.rating >= 1
+      && data.rating <= 5
+      && data.content is string
+      && data.content.size() >= 10
+      && data.content.size() <= 2000
+      && data.spoiler is bool
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && validReviewFields(request.resource.data, reviewId)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.mediaKey == resource.data.mediaKey
+        && request.resource.data.mediaId == resource.data.mediaId
+        && request.resource.data.mediaType == resource.data.mediaType
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && validReviewFields(request.resource.data, reviewId);
+
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+
+      match /likes/{uid} {
+        allow read: if true;
+        allow create: if isOwner(uid)
+          && noBlockBetween(uid, get(/databases/$(database)/documents/reviews/$(reviewId)).data.uid)
+          && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.createdAt == request.time;
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+        allow update: if false;
+      }
+    }
+
+    function validListFields(data) {
+      return data.keys().hasOnly([
+        'ownerUid', 'title', 'description', 'isPublic', 'itemCount', 'createdAt', 'updatedAt'
+      ])
+      && data.ownerUid is string
+      && data.title is string
+      && data.title.size() >= 3
+      && data.title.size() <= 60
+      && data.description is string
+      && data.description.size() <= 300
+      && data.isPublic is bool
+      && data.itemCount is int
+      && data.itemCount >= 0
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function validListItem(data, mediaKey) {
+      return data.keys().hasOnly([
+        'ownerUid', 'mediaKey', 'mediaId', 'mediaType', 'title',
+        'posterPath', 'releaseDate', 'addedAt'
+      ])
+      && data.ownerUid is string
+      && data.mediaKey == mediaKey
+      && data.mediaId is string
+      && data.mediaType in ['movie', 'tv']
+      && mediaKey == data.mediaType + '_' + data.mediaId
+      && data.title is string
+      && data.posterPath is string
+      && data.releaseDate is string
+      && data.addedAt is timestamp;
+    }
+
+    match /lists/{listId} {
+      allow read: if resource.data.isPublic == true
+        || (isSignedIn() && resource.data.ownerUid == request.auth.uid)
+        || isListMember(listId);
+
+      allow create: if isSignedIn()
+        && validListFields(request.resource.data)
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.itemCount == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && validListFields(request.resource.data)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || (
+            isListEditor(listId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['itemCount', 'updatedAt'])
+            && (
+              request.resource.data.itemCount == resource.data.itemCount + 1
+              || request.resource.data.itemCount == resource.data.itemCount - 1
+            )
+          )
+        );
+
+      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /items/{mediaKey} {
+        allow read: if get(/databases/$(database)/documents/lists/$(listId)).data.isPublic == true
+          || isListOwner(listId)
+          || isListMember(listId);
+
+        allow create: if isSignedIn()
+          && isListEditor(listId)
+          && validListItem(request.resource.data, mediaKey)
+          && request.resource.data.ownerUid == listDocument(listId).data.ownerUid
+          && request.resource.data.addedAt == request.time
+          && listAfter(listId).data.itemCount == listDocument(listId).data.itemCount + 1
+          && listAfter(listId).data.updatedAt == request.time;
+
+        allow update: if false;
+
+        allow delete: if isSignedIn()
+          && isListEditor(listId)
+          && resource.data.ownerUid == listDocument(listId).data.ownerUid
+          && listAfter(listId).data.itemCount == listDocument(listId).data.itemCount - 1
+          && listAfter(listId).data.itemCount >= 0
+          && listAfter(listId).data.updatedAt == request.time;
+      }
+
+      match /likes/{uid} {
+        allow read: if listDocument(listId).data.isPublic == true || isListOwner(listId) || isListMember(listId);
+        allow create: if isOwner(uid)
+          && noBlockBetween(uid, listDocument(listId).data.ownerUid)
+          && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.createdAt == request.time;
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+        allow update: if false;
+      }
+
+      match /members/{uid} {
+        allow read: if listDocument(listId).data.isPublic == true
+          || isListOwner(listId)
+          || isListMember(listId)
+          || (isSignedIn() && resource.data.uid == request.auth.uid);
+        allow create: if isListOwner(listId)
+          && uid != listDocument(listId).data.ownerUid
+          && noBlockBetween(request.auth.uid, uid)
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'createdAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.role in ['editor', 'viewer']
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isListOwner(listId)
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'createdAt', 'updatedAt'])
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.role in ['editor', 'viewer']
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isListOwner(listId)
+          || (isOwner(uid) && resource.data.uid == request.auth.uid);
+      }
+    }
+
+    match /follows/{followId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['followerUid', 'followingUid', 'createdAt'])
+        && request.resource.data.followerUid == request.auth.uid
+        && request.resource.data.followingUid is string
+        && request.resource.data.followerUid != request.resource.data.followingUid
+        && noBlockBetween(request.resource.data.followerUid, request.resource.data.followingUid)
+        && followId == request.resource.data.followerUid + '_' + request.resource.data.followingUid
+        && request.resource.data.createdAt == request.time;
+      allow delete: if isSignedIn() && request.auth.uid in [resource.data.followerUid, resource.data.followingUid];
+      allow update: if false;
+    }
+
+    match /posts/{postId} {
+      allow read: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'type', 'content', 'mediaKey', 'reviewId', 'listId',
+          'diaryEntryId', 'quotedPostId', 'poll', 'spoiler', 'visibility',
+          'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.type in ['text', 'media', 'review', 'list', 'diary', 'quote', 'poll']
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 500
+        && request.resource.data.spoiler is bool
+        && validVisibility(request.resource.data.visibility)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'type', 'content', 'mediaKey', 'reviewId', 'listId',
+          'diaryEntryId', 'quotedPostId', 'poll', 'spoiler', 'visibility',
+          'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 500
+        && request.resource.data.spoiler is bool
+        && validVisibility(request.resource.data.visibility);
+      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /replies/{replyId} {
+        allow read: if true;
+        allow create: if isSignedIn()
+          && noBlockBetween(request.auth.uid, get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid)
+          && request.resource.data.keys().hasOnly(['ownerUid', 'content', 'spoiler', 'createdAt', 'updatedAt'])
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.content is string
+          && request.resource.data.content.size() >= 1
+          && request.resource.data.content.size() <= 500
+          && request.resource.data.spoiler is bool
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isSignedIn()
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.content is string
+          && request.resource.data.content.size() >= 1
+          && request.resource.data.content.size() <= 500;
+        allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      }
+
+      match /likes/{uid} {
+        allow read: if get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+          || (isSignedIn() && get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid == request.auth.uid);
+        allow create: if isOwner(uid)
+          && noBlockBetween(uid, get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid)
+          && (get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+            || get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid == request.auth.uid)
+          && request.resource.data.keys().hasOnly(['uid', 'createdAt']) && request.resource.data.uid == uid && request.resource.data.createdAt == request.time;
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+        allow update: if false;
+      }
+
+      match /reposts/{uid} {
+        allow read: if get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+          || (isSignedIn() && get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid == request.auth.uid);
+        allow create: if isOwner(uid)
+          && noBlockBetween(uid, get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid)
+          && get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+          && request.resource.data.keys().hasOnly(['uid', 'createdAt']) && request.resource.data.uid == uid && request.resource.data.createdAt == request.time;
+        allow delete: if isOwner(uid) && resource.data.uid == uid;
+        allow update: if false;
+      }
+
+      match /bookmarks/{uid} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid) && request.resource.data.keys().hasOnly(['uid', 'createdAt']) && request.resource.data.uid == uid && request.resource.data.createdAt == request.time;
+        allow update: if false;
+      }
+    }
+
+    match /activities/{activityId} {
+      allow read: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'type', 'targetType', 'targetId', 'mediaKey', 'visibility', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type in ['watched', 'favorite', 'review', 'list', 'post']
+        && request.resource.data.targetType is string
+        && request.resource.data.targetId is string
+        && request.resource.data.mediaKey is string
+        && validVisibility(request.resource.data.visibility)
+        && request.resource.data.createdAt == request.time;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && resource.data.reporterUid == request.auth.uid;
+      allow list: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll(['reporterUid', 'targetType', 'targetId', 'reason', 'details', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['reporterUid', 'targetType', 'targetId', 'parentId', 'reason', 'details', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.targetType in ['user', 'post', 'review', 'list', 'community', 'community_post']
+        && request.resource.data.targetId is string
+        && request.resource.data.reason in ['spam', 'harassment', 'hate', 'sexual', 'violence', 'misinformation', 'privacy', 'spoiler', 'other']
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 500
+        && (request.resource.data.reason != 'other' || request.resource.data.details.size() > 0)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && ((request.resource.data.targetType != 'community_post'
+            && reportId == request.auth.uid + '_' + request.resource.data.targetType + '_' + request.resource.data.targetId)
+          || (request.resource.data.targetType == 'community_post'
+            && request.resource.data.parentId is string
+            && reportId == request.auth.uid + '_communityPost_' + request.resource.data.parentId + '_' + request.resource.data.targetId))
+        && (
+          (request.resource.data.targetType == 'user' && request.resource.data.targetId != request.auth.uid && exists(/databases/$(database)/documents/users/$(request.resource.data.targetId)))
+          || (request.resource.data.targetType == 'post' && exists(/databases/$(database)/documents/posts/$(request.resource.data.targetId)) && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.visibility == 'public' && get(/databases/$(database)/documents/posts/$(request.resource.data.targetId)).data.ownerUid != request.auth.uid)
+          || (request.resource.data.targetType == 'review' && exists(/databases/$(database)/documents/reviews/$(request.resource.data.targetId)) && get(/databases/$(database)/documents/reviews/$(request.resource.data.targetId)).data.uid != request.auth.uid)
+          || (request.resource.data.targetType == 'list' && exists(/databases/$(database)/documents/lists/$(request.resource.data.targetId)) && get(/databases/$(database)/documents/lists/$(request.resource.data.targetId)).data.isPublic == true && get(/databases/$(database)/documents/lists/$(request.resource.data.targetId)).data.ownerUid != request.auth.uid)
+          || (request.resource.data.targetType == 'community' && exists(/databases/$(database)/documents/communities/$(request.resource.data.targetId)) && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)).data.isPublic == true && get(/databases/$(database)/documents/communities/$(request.resource.data.targetId)).data.ownerUid != request.auth.uid)
+          || (request.resource.data.targetType == 'community_post' && exists(/databases/$(database)/documents/communities/$(request.resource.data.parentId)) && get(/databases/$(database)/documents/communities/$(request.resource.data.parentId)).data.isPublic == true && exists(/databases/$(database)/documents/communities/$(request.resource.data.parentId)/posts/$(request.resource.data.targetId)) && get(/databases/$(database)/documents/communities/$(request.resource.data.parentId)/posts/$(request.resource.data.targetId)).data.ownerUid != request.auth.uid)
+        );
+      allow update, delete: if false;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['participants', 'createdBy', 'createdAt', 'updatedAt'])
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && noBlockBetween(request.resource.data.participants[0], request.resource.data.participants[1])
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isConversationParticipant(conversationId)
+        && noBlockBetween(resource.data.participants[0], resource.data.participants[1])
+        && request.resource.data.keys().hasOnly(['participants', 'createdBy', 'createdAt', 'updatedAt', 'lastMessageId', 'lastSenderUid', 'lastMessageAt'])
+        && request.resource.data.keys().hasAll(['participants', 'createdBy', 'createdAt', 'updatedAt', 'lastMessageId', 'lastSenderUid', 'lastMessageAt'])
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastMessageId', 'lastSenderUid', 'lastMessageAt'])
+        && request.resource.data.lastMessageId is string
+        && request.resource.data.lastSenderUid == request.auth.uid
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && !exists(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.lastMessageId))
+        && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.lastMessageId))
+        && getAfter(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.lastMessageId)).data.senderUid == request.auth.uid;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isConversationParticipant(conversationId);
+        allow create: if isConversationParticipant(conversationId)
+          && conversationDocument(conversationId).data.participants.size() == 2
+          && noBlockBetween(conversationDocument(conversationId).data.participants[0], conversationDocument(conversationId).data.participants[1])
+          && request.resource.data.keys().hasOnly(['senderUid', 'content', 'mediaUrl', 'createdAt', 'updatedAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.content is string
+          && request.resource.data.content.size() <= 2000
+          && request.resource.data.mediaUrl is string
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageId == messageId
+          && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastSenderUid == request.auth.uid
+          && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageAt == request.time
+          && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.updatedAt == request.time;
+        allow update: if isSignedIn()
+          && resource.data.senderUid == request.auth.uid
+          && request.resource.data.senderUid == resource.data.senderUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']);
+        allow delete: if isSignedIn() && resource.data.senderUid == request.auth.uid;
+      }
+    }
+
+    match /communities/{communityId} {
+      allow read: if resource.data.isPublic == true || isCommunityMember(communityId);
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['ownerUid', 'name', 'nameLower', 'description', 'rules', 'category', 'theme', 'isPublic', 'isArchived', 'memberCount', 'postCount', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 50
+        && request.resource.data.nameLower is string
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 10
+        && request.resource.data.description.size() <= 500
+        && request.resource.data.rules is string && request.resource.data.rules.size() <= 1000
+        && request.resource.data.category in ['general', 'franchise', 'genre', 'movie', 'tv', 'director', 'actor', 'animation']
+        && request.resource.data.theme in ['sunset', 'nebula', 'noir', 'forest', 'ocean', 'crimson']
+        && request.resource.data.isPublic == true
+        && request.resource.data.isArchived == false
+        && request.resource.data.memberCount == 1
+        && request.resource.data.postCount == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && getAfter(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)).data.role == 'owner';
+      allow update: if isCommunityOwner(communityId)
+        && request.resource.data.keys().hasOnly(['ownerUid', 'name', 'nameLower', 'description', 'rules', 'category', 'theme', 'isPublic', 'isArchived', 'memberCount', 'postCount', 'createdAt', 'updatedAt'])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 50
+        && request.resource.data.memberCount >= 1
+        && request.resource.data.postCount >= 0
+        && (request.resource.data.ownerUid == resource.data.ownerUid
+          || (request.resource.data.ownerUid != resource.data.ownerUid
+            && exists(/databases/$(database)/documents/communities/$(communityId)/members/$(request.resource.data.ownerUid))
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/members/$(request.resource.data.ownerUid)).data.role == 'owner'
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/members/$(resource.data.ownerUid)).data.role == 'moderator'))
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.memberCount >= 1
+        && (request.resource.data.memberCount == resource.data.memberCount + 1
+          || request.resource.data.memberCount == resource.data.memberCount - 1)
+        && (existsAfter(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid))
+          != exists(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)));
+      allow update: if isCommunityMember(communityId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['postCount', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.postCount >= 0
+        && (request.resource.data.postCount == resource.data.postCount + 1
+          || request.resource.data.postCount == resource.data.postCount - 1);
+      allow delete: if isCommunityOwner(communityId);
+
+      match /members/{uid} {
+        allow read: if communityDocument(communityId).data.isPublic == true
+          || isCommunityMember(communityId)
+          || (isSignedIn() && resource.data.uid == request.auth.uid);
+        allow create: if (isOwner(uid) && communityIsActive(communityId))
+          && noBlockBetween(uid, communityDocument(communityId).data.ownerUid)
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'createdAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.role == 'member'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && getAfter(/databases/$(database)/documents/communities/$(communityId)).data.memberCount == communityDocument(communityId).data.memberCount + 1;
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'createdAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.role == 'owner'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && getAfter(/databases/$(database)/documents/communities/$(communityId)).data.ownerUid == uid;
+        allow update: if isCommunityOwner(communityId)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.role in ['owner', 'member', 'moderator']
+          && ((request.resource.data.role == 'owner' && getAfter(/databases/$(database)/documents/communities/$(communityId)).data.ownerUid == uid)
+            || (resource.data.role == 'owner' && request.resource.data.role == 'moderator' && getAfter(/databases/$(database)/documents/communities/$(communityId)).data.ownerUid != uid)
+            || (resource.data.role != 'owner' && request.resource.data.role in ['member', 'moderator']));
+        allow delete: if (isCommunityOwner(communityId) && uid != communityDocument(communityId).data.ownerUid)
+          || (isOwner(uid) && resource.data.role != 'owner'
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)).data.memberCount == communityDocument(communityId).data.memberCount - 1);
+      }
+
+      match /posts/{postId} {
+        allow read: if communityDocument(communityId).data.isPublic == true || isCommunityMember(communityId);
+        allow create: if isCommunityMember(communityId) && communityIsActive(communityId)
+          && request.resource.data.keys().hasOnly(['communityId', 'ownerUid', 'type', 'content', 'spoiler', 'mediaKey', 'mediaType', 'mediaId', 'mediaTitle', 'posterPath', 'pollId', 'likeCount', 'replyCount', 'lastReplyId', 'isPinned', 'createdAt', 'updatedAt'])
+          && request.resource.data.communityId == communityId
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.type in ['discussion', 'poll']
+          && ((request.resource.data.type == 'discussion' && request.resource.data.pollId == null)
+            || (request.resource.data.type == 'poll'
+              && request.resource.data.pollId is string
+              && existsAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(request.resource.data.pollId))
+              && getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(request.resource.data.pollId)).data.postId == postId))
+          && request.resource.data.content is string
+          && request.resource.data.content.size() >= 1
+          && request.resource.data.content.size() <= 1000
+          && request.resource.data.spoiler is bool
+          && (request.resource.data.mediaType == null || request.resource.data.mediaType in ['movie', 'tv'])
+          && request.resource.data.likeCount == 0
+          && request.resource.data.replyCount == 0
+          && request.resource.data.isPinned == false
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && getAfter(/databases/$(database)/documents/communities/$(communityId)).data.postCount == communityDocument(communityId).data.postCount + 1;
+        allow update: if isSignedIn()
+          && resource.data.ownerUid == request.auth.uid
+          && communityIsActive(communityId)
+          && request.resource.data.keys().hasOnly(['communityId', 'ownerUid', 'type', 'content', 'spoiler', 'mediaKey', 'mediaType', 'mediaId', 'mediaTitle', 'posterPath', 'pollId', 'likeCount', 'replyCount', 'lastReplyId', 'isPinned', 'createdAt', 'updatedAt'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'spoiler', 'mediaKey', 'mediaType', 'mediaId', 'mediaTitle', 'posterPath', 'updatedAt'])
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.communityId == resource.data.communityId
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.likeCount == resource.data.likeCount
+          && request.resource.data.replyCount == resource.data.replyCount
+          && request.resource.data.get('lastReplyId', null) == resource.data.get('lastReplyId', null)
+          && request.resource.data.isPinned == resource.data.isPinned
+          && request.resource.data.content is string
+          && request.resource.data.content.size() >= 1
+          && request.resource.data.content.size() <= 1000
+          && request.resource.data.spoiler is bool
+          && (request.resource.data.mediaType == null || request.resource.data.mediaType in ['movie', 'tv'])
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isCommunityModerator(communityId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'updatedAt'])
+          && request.resource.data.isPinned is bool
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isCommunityMember(communityId) && communityIsActive(communityId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount', 'updatedAt'])
+          && request.resource.data.likeCount >= 0
+          && ((request.resource.data.likeCount == resource.data.likeCount + 1
+              && !exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/likes/$(request.auth.uid))
+              && existsAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/likes/$(request.auth.uid)))
+            || (request.resource.data.likeCount == resource.data.likeCount - 1
+              && exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/likes/$(request.auth.uid))
+              && !existsAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/likes/$(request.auth.uid))))
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isCommunityMember(communityId) && communityIsActive(communityId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount', 'lastReplyId', 'updatedAt'])
+          && request.resource.data.replyCount >= 0
+          && request.resource.data.lastReplyId is string
+          && ((request.resource.data.replyCount == resource.data.replyCount + 1
+              && !exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/replies/$(request.resource.data.lastReplyId))
+              && existsAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/replies/$(request.resource.data.lastReplyId))
+              && getAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/replies/$(request.resource.data.lastReplyId)).data.ownerUid == request.auth.uid)
+            || (request.resource.data.replyCount == resource.data.replyCount - 1
+              && exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/replies/$(request.resource.data.lastReplyId))
+              && !existsAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/replies/$(request.resource.data.lastReplyId))))
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if (isSignedIn() && resource.data.ownerUid == request.auth.uid) || isCommunityModerator(communityId);
+
+        match /likes/{uid} {
+          allow read: if communityDocument(communityId).data.isPublic == true;
+          allow create: if isOwner(uid) && isCommunityMember(communityId) && communityIsActive(communityId)
+            && noBlockBetween(request.auth.uid, get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.ownerUid)
+            && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+            && request.resource.data.uid == uid && request.resource.data.createdAt == request.time
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.likeCount == get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.likeCount + 1;
+          allow delete: if isOwner(uid) && resource.data.uid == uid
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.likeCount == get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.likeCount - 1;
+          allow update: if false;
+        }
+
+        match /replies/{replyId} {
+          allow read: if communityDocument(communityId).data.isPublic == true;
+          allow create: if isCommunityMember(communityId) && communityIsActive(communityId)
+            && noBlockBetween(request.auth.uid, get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.ownerUid)
+            && request.resource.data.keys().hasOnly(['ownerUid', 'content', 'spoiler', 'createdAt', 'updatedAt'])
+            && request.resource.data.ownerUid == request.auth.uid
+            && request.resource.data.content is string && request.resource.data.content.size() >= 1 && request.resource.data.content.size() <= 500
+            && request.resource.data.spoiler is bool && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.replyCount == get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.replyCount + 1;
+          allow delete: if ((isSignedIn() && resource.data.ownerUid == request.auth.uid) || isCommunityModerator(communityId))
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.replyCount == get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.replyCount - 1;
+          allow update: if isSignedIn() && resource.data.ownerUid == request.auth.uid && communityIsActive(communityId)
+            && request.resource.data.ownerUid == resource.data.ownerUid && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'spoiler', 'updatedAt'])
+            && request.resource.data.updatedAt == request.time;
+        }
+      }
+
+      match /polls/{pollId} {
+        allow read: if communityDocument(communityId).data.isPublic == true || isCommunityMember(communityId);
+        allow create: if isCommunityMember(communityId) && communityIsActive(communityId)
+          && request.resource.data.keys().hasOnly(['communityId', 'postId', 'ownerUid', 'question', 'options', 'optionCounts', 'totalVotes', 'closesAt', 'createdAt', 'updatedAt'])
+          && request.resource.data.communityId == communityId
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.question is string
+          && request.resource.data.question.size() >= 3
+          && request.resource.data.question.size() <= 160
+          && request.resource.data.options is list
+          && request.resource.data.options.size() >= 2
+          && request.resource.data.options.size() <= 4
+          && request.resource.data.optionCounts is list
+          && request.resource.data.optionCounts.size() == request.resource.data.options.size()
+          && request.resource.data.optionCounts[0] == 0
+          && request.resource.data.optionCounts[1] == 0
+          && (request.resource.data.optionCounts.size() < 3 || request.resource.data.optionCounts[2] == 0)
+          && (request.resource.data.optionCounts.size() < 4 || request.resource.data.optionCounts[3] == 0)
+          && request.resource.data.totalVotes == 0
+          && (request.resource.data.closesAt == null || request.resource.data.closesAt is timestamp)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && getAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(request.resource.data.postId)).data.pollId == pollId;
+        allow update: if isCommunityMember(communityId) && communityIsActive(communityId)
+          && request.resource.data.keys().hasOnly(['communityId', 'postId', 'ownerUid', 'question', 'options', 'optionCounts', 'totalVotes', 'closesAt', 'createdAt', 'updatedAt'])
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.communityId == resource.data.communityId
+          && request.resource.data.postId == resource.data.postId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.question == resource.data.question
+          && request.resource.data.options == resource.data.options
+          && request.resource.data.closesAt == resource.data.closesAt
+          && request.resource.data.totalVotes == resource.data.totalVotes + 1
+          && request.resource.data.optionCounts is list
+          && request.resource.data.optionCounts.size() == resource.data.optionCounts.size()
+          && !exists(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid))
+          && existsAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid))
+          && getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid)).data.uid == request.auth.uid
+          && (
+            (getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex == 0
+              && request.resource.data.optionCounts[0] == resource.data.optionCounts[0] + 1
+              && request.resource.data.optionCounts[1] == resource.data.optionCounts[1]
+              && (resource.data.optionCounts.size() < 3 || request.resource.data.optionCounts[2] == resource.data.optionCounts[2])
+              && (resource.data.optionCounts.size() < 4 || request.resource.data.optionCounts[3] == resource.data.optionCounts[3]))
+            || (getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex == 1
+              && request.resource.data.optionCounts[0] == resource.data.optionCounts[0]
+              && request.resource.data.optionCounts[1] == resource.data.optionCounts[1] + 1
+              && (resource.data.optionCounts.size() < 3 || request.resource.data.optionCounts[2] == resource.data.optionCounts[2])
+              && (resource.data.optionCounts.size() < 4 || request.resource.data.optionCounts[3] == resource.data.optionCounts[3]))
+            || (getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex == 2
+              && resource.data.optionCounts.size() >= 3
+              && request.resource.data.optionCounts[0] == resource.data.optionCounts[0]
+              && request.resource.data.optionCounts[1] == resource.data.optionCounts[1]
+              && request.resource.data.optionCounts[2] == resource.data.optionCounts[2] + 1
+              && (resource.data.optionCounts.size() < 4 || request.resource.data.optionCounts[3] == resource.data.optionCounts[3]))
+            || (getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)/votes/$(request.auth.uid)).data.optionIndex == 3
+              && resource.data.optionCounts.size() == 4
+              && request.resource.data.optionCounts[0] == resource.data.optionCounts[0]
+              && request.resource.data.optionCounts[1] == resource.data.optionCounts[1]
+              && request.resource.data.optionCounts[2] == resource.data.optionCounts[2]
+              && request.resource.data.optionCounts[3] == resource.data.optionCounts[3] + 1)
+          )
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if (isSignedIn() && resource.data.ownerUid == request.auth.uid) || isCommunityModerator(communityId);
+
+        match /votes/{uid} {
+          allow get: if isOwner(uid);
+          allow list: if false;
+          allow create: if isOwner(uid)
+            && isCommunityMember(communityId)
+            && communityIsActive(communityId)
+            && noBlockBetween(uid, get(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)).data.ownerUid)
+            && request.resource.data.keys().hasOnly(['uid', 'optionIndex', 'createdAt'])
+            && request.resource.data.uid == uid
+            && request.resource.data.optionIndex is int
+            && request.resource.data.optionIndex >= 0
+            && request.resource.data.optionIndex < get(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)).data.options.size()
+            && (get(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)).data.closesAt == null
+              || get(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)).data.closesAt > request.time)
+            && request.resource.data.createdAt == request.time
+            && getAfter(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)).data.totalVotes == get(/databases/$(database)/documents/communities/$(communityId)/polls/$(pollId)).data.totalVotes + 1;
+          allow delete, update: if false;
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,7 @@
+import { useEffect, useState } from 'react'
+import { CommunityCard } from './CommunityCard'
+import { EmptyState } from '../shared/EmptyState'
+import { getUserCommunities } from '../../services/communities'
+import { useSafety } from '../../context/SafetyContext'
+
+export function UserCommunitiesSection({ uid, max = 6 }) { const safety = useSafety(); const [items, setItems] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); useEffect(() => { let active = true; setItems([]); setLoading(true); setError(''); if (!uid) { setLoading(false); return undefined } getUserCommunities(uid, max).then((value) => { if (active) setItems(value.filter((item) => !safety.blockedUids.has(item.ownerUid) && !safety.mutedUids.has(item.ownerUid))) }).catch((e) => { if (active) setError(e.message) }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [uid, max, safety.blockedUids, safety.mutedUids]); return <section className="profile-section-card profile-lists-section"><div className="section-heading"><h2>Topluluklar</h2></div>{loading ? <div className="list-loading">Topluluklar yükleniyor…</div> : error ? <p className="auth-message auth-message-error">{error}</p> : items.length ? <div className="community-grid">{items.map((item) => <CommunityCard key={item.id} community={item} membership={item.membership}/>)}</div> : <EmptyState title="Topluluklar boş" message="Henüz public bir topluluğa katılmadı."/>}</section> }
