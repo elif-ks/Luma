@@ -262,6 +262,7 @@ export function Sidebar() {
   const [accountError, setAccountError] = useState('')
   const items = [
     { label: 'Ana Sayfa', to: '/' },
+    { label: 'Aktivite', to: '/activity' },
     { label: 'Keşfet', to: '/discover' },
     { label: 'Kullanıcılar', to: '/people' },
     { label: 'Topluluklar', to: '/communities' },
