@@ -50,6 +50,7 @@ export function ActivityFeed({ mode = 'following', uid, max = 100, compact = fal
 
   const followedUidSet = useMemo(() => new Set(following), [following])
   const visible = useMemo(() => activities.filter((item) => {
+    if (item.isListActivity && !item.source) return false
     if (safety.blockedUids.has(item.uid) || safety.mutedUids.has(item.uid)) return false
     if (mode === 'own') return item.uid === (uid || user?.uid)
     if (mode === 'following') return followedUidSet.has(item.uid) && item.uid !== user?.uid

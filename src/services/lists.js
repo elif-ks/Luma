@@ -125,12 +125,6 @@ export async function updateList(listId, values) {
   }
 }
 
-function createListDeleteError(message, code, cause) {
-  const error = createListError(message, code)
-  error.cause = cause
-  return error
-}
-
 function logListDeleteError(stage, error) {
   if (!import.meta.env.DEV) return
   console.error('[lists:delete]', {
@@ -209,16 +203,12 @@ export async function deleteList(listId, actorUid) {
     // Aktiviteyi liste belgesinden önce kaldırarak akışta yetim veri kalmasını önle.
     stage = 'liste aktivitesini temizleme'
     try {
-      const { deleteActivity, hasActivity } = await import('./activities')
-      if (await hasActivity('list', listId)) {
-        await deleteActivity(actorUid, 'list', listId)
-      }
+      const { tryDeleteListActivity } = await import('./activities')
+      await tryDeleteListActivity(actorUid, listId)
     } catch (error) {
-      throw createListDeleteError(
-        'Liste aktivitesi kaldırılamadığı için liste silinemedi. Lütfen tekrar deneyin.',
-        'lists/activity-delete-failed',
-        error
-      )
+      // Aktivite yardımcı katmanındaki beklenmeyen bir hata da owner'ın kendi
+      // listesini silmesini engellememeli.
+      logListDeleteError(stage, error)
     }
 
     stage = 'liste belgesini silme'

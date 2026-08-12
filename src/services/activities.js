@@ -59,6 +59,58 @@ export async function deleteActivity(uid, type, sourceId) {
   }
 }
 
+function logLegacyListActivity(stage, error, schema = 'unknown') {
+  if (!import.meta.env.DEV) return
+  console.warn('[activity:list-cleanup]', {
+    stage,
+    schema,
+    code: error?.code || 'unknown'
+  })
+}
+
+export async function tryDeleteListActivity(ownerUid, listId) {
+  const authUid = getFirebaseAuth().currentUser?.uid
+  if (!ownerUid || !listId || authUid !== ownerUid) {
+    logLegacyListActivity('owner-mismatch', { code: 'activities/owner-mismatch' })
+    return { status: 'skipped', reason: 'owner-mismatch' }
+  }
+
+  const activityId = activityIdFor('list', listId)
+  let snapshot
+  try {
+    snapshot = await getDocs(query(
+      collection(db, 'activities'),
+      where(documentId(), '==', activityId),
+      where('visibility', '==', 'public'),
+      limit(1)
+    ))
+  } catch (error) {
+    logLegacyListActivity('lookup-failed', error)
+    return { status: 'skipped', reason: 'lookup-failed' }
+  }
+
+  const activityDocument = snapshot.docs.find((item) => item.id === activityId)
+  if (!activityDocument) return { status: 'missing' }
+
+  const data = activityDocument.data()
+  const isLegacy = !data.uid && Boolean(data.actorUid || data.sourceId || data.sourceType)
+  const storedOwnerUid = isLegacy ? data.actorUid : data.uid
+  if (!storedOwnerUid || storedOwnerUid !== authUid) {
+    logLegacyListActivity('document-owner-mismatch', { code: 'activities/document-owner-mismatch' }, isLegacy ? 'legacy' : 'current')
+    return { status: 'skipped', reason: 'document-owner-mismatch' }
+  }
+
+  try {
+    await deleteDoc(activityDocument.ref)
+    return { status: 'deleted', schema: isLegacy ? 'legacy' : 'current' }
+  } catch (error) {
+    // Legacy belgelerde yalnızca actorUid bulunabilir. Güncel Rules silme için
+    // resource.data.uid istediğinden bu belgeyi istemciden zorlamadan bırakırız.
+    logLegacyListActivity('delete-failed', error, isLegacy ? 'legacy' : 'current')
+    return { status: 'skipped', reason: 'delete-failed', schema: isLegacy ? 'legacy' : 'current' }
+  }
+}
+
 export async function hasActivity(type, sourceId) {
   try {
     const activityId = activityIdFor(type, sourceId)
@@ -86,14 +138,16 @@ export function subscribeToUserActivities(uid, onChange, onError, max = 100) {
 export async function enrichActivities(items) {
   return Promise.all(items.map(async (activity) => {
     const [mediaType, mediaId] = String(activity.mediaKey || '').split('_')
+    const isListActivity = activity.type === 'list' || activity.targetType === 'list' || activity.sourceType === 'list'
+    const listSourceId = activity.targetId || activity.sourceId
     const sourceRequest = activity.type === 'review'
       ? getDoc(doc(db, 'reviews', activity.targetId)).then((snapshot) => snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null)
-      : activity.type === 'list'
-        ? getDoc(doc(db, 'lists', activity.targetId)).then((snapshot) => snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null)
+      : isListActivity && listSourceId
+        ? getDoc(doc(db, 'lists', listSourceId)).then((snapshot) => snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null)
         : activity.type === 'watched' && ['movie', 'tv'].includes(mediaType) && mediaId
           ? (mediaType === 'tv' ? getTVDetails(mediaId) : getMovieDetails(mediaId)).then((media) => ({ title: media.title || media.name || '', posterPath: media.poster_path || '', mediaType, mediaId }))
           : Promise.resolve(null)
     const [profileResult, sourceResult] = await Promise.allSettled([getCachedReviewProfile(activity.uid), sourceRequest])
-    return { ...activity, actorProfile: profileResult.status === 'fulfilled' ? profileResult.value : null, source: sourceResult.status === 'fulfilled' ? sourceResult.value : null }
+    return { ...activity, isListActivity, actorProfile: profileResult.status === 'fulfilled' ? profileResult.value : null, source: sourceResult.status === 'fulfilled' ? sourceResult.value : null }
   }))
 }
