@@ -4,7 +4,6 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout'
 import { PageLoadingFallback } from './components/shared/PageLoadingFallback'
-import { RouteErrorBoundary } from './components/shared/RouteErrorBoundary'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SafetyProvider } from './context/SafetyContext'
 import { NotificationProvider } from './context/NotificationContext'
@@ -68,7 +67,6 @@ export function App() {
       <BrowserRouter>
         <SafetyProvider>
           <NotificationProvider>
-          <RouteErrorBoundary>
             <Suspense fallback={<PageLoadingFallback />}>
               <Routes>
                 <Route element={<GuestOnlyRoute />}>
@@ -113,7 +111,6 @@ export function App() {
                 </Route>
               </Routes>
             </Suspense>
-          </RouteErrorBoundary>
           </NotificationProvider>
         </SafetyProvider>
       </BrowserRouter>
