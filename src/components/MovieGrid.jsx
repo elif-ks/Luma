@@ -7,7 +7,7 @@ export function MovieGrid({ movies }) {
       <div className="section-heading">
         <div>
           <p className="eyebrow">Öne çıkanlar</p>
-          <h2>Bu hafta akışta</h2>
+          <h2>Bu Hafta Akışta</h2>
         </div>
         <Link to="/discover?section=trending">Tümünü gör</Link>
       </div>

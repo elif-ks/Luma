@@ -232,6 +232,8 @@
 @media(max-width:560px){.content-like-wrap{max-width:100%}.live-review-actions .content-like-wrap{margin-left:0}}
 
 .social-feed-section { min-width: 0; }
+.home-conversation-section { min-width: 0; }
+.home-conversation-section .social-composer { margin-bottom: 0; background: linear-gradient(145deg, rgba(255,94,125,.055), rgba(255,138,76,.025)); }
 .social-composer,.social-post-card { border: 1px solid rgba(255,255,255,.09); border-radius: 20px; background: rgba(255,255,255,.035); }
 .social-composer { display: flex; gap: 13px; padding: 16px; margin-bottom: 18px; min-width: 0; }
 .social-avatar { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; color: #fff; font-weight: 800; background: linear-gradient(135deg,#ff5e7d,#ff8a4c); }

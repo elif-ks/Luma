@@ -7,6 +7,7 @@ import { ErrorState } from '../components/shared/ErrorState'
 import { getTrendingMovies } from '../services/tmdb'
 import { attachReviewProfiles, subscribeToLatestReviews } from '../services/reviews'
 import { SocialFeed } from '../components/social/SocialFeed'
+import { PostComposer } from '../components/social/PostComposer'
 import { ForYouSection } from '../components/recommendations/ForYouSection'
 import { ActivityFeed } from '../components/activity/ActivityFeed'
 import { MyCommunitiesFeed } from '../components/communities/MyCommunitiesFeed'
@@ -52,10 +53,19 @@ export function HomePage() {
     <>
       <HeroSection movie={heroMovie} />
       <MovieGrid movies={featuredMovies} />
+      <section className="card-section home-conversation-section" aria-labelledby="home-conversation-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Topluluk akışı</p>
+            <h2 id="home-conversation-title">Sohbete Katıl</h2>
+          </div>
+        </div>
+        <PostComposer />
+      </section>
+      <SocialFeed limit={8} showComposer={false} />
       <ForYouSection />
       <section className="card-section"><div className="section-header"><div><p className="eyebrow">Toplulukların</p><h2>Topluluklardan yeni gönderiler</h2></div><Link to="/communities">Tümünü gör</Link></div><MyCommunitiesFeed limit={4}/></section>
       <section className="card-section home-activity-section"><div className="section-header"><div><p className="eyebrow">Sosyal keşif</p><h2>Takip Ettiklerinin Aktiviteleri</h2></div><Link to="/activity">Tümünü gör</Link></div><ActivityFeed compact max={100}/></section>
-      <SocialFeed limit={8} />
       <FeaturedReviews reviews={reviews} />
     </>
   )
