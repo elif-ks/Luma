@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app'
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import { getFirestore } from 'firebase/firestore'
 import {
   createUserWithEmailAndPassword,
@@ -26,7 +27,10 @@ const missingFirebaseConfig = Object.entries(firebaseConfig)
   .filter(([, value]) => !String(value || '').trim())
   .map(([key]) => key)
 
+const appCheckSiteKey = String(import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY || '').trim()
+
 let appInstance = null
+let appCheckInstance = null
 let authInstance = null
 let currentUser = null
 let authInitialized = false
@@ -56,6 +60,17 @@ export function getFirebaseApp() {
       throw new Error(`Firebase yapılandırması eksik: ${missingFirebaseConfig.join(', ')}`)
     }
     appInstance = initializeApp(firebaseConfig)
+
+    if (import.meta.env.PROD === true && appCheckSiteKey) {
+      try {
+        appCheckInstance = initializeAppCheck(appInstance, {
+          provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+          isTokenAutoRefreshEnabled: true,
+        })
+      } catch {
+        console.warn('Firebase App Check başlatılamadı; uygulama korumasız olarak açılıyor.')
+      }
+    }
   }
   return appInstance
 }
