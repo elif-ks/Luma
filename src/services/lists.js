@@ -15,7 +15,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore'
-import { db } from './firebase'
+import { db, getFirebaseAuth } from './firebase'
 
 function createListError(message, code = 'lists/unknown') {
   const error = new Error(message)
@@ -125,28 +125,108 @@ export async function updateList(listId, values) {
   }
 }
 
-export async function deleteList(listId) {
+function createListDeleteError(message, code, cause) {
+  const error = createListError(message, code)
+  error.cause = cause
+  return error
+}
+
+function logListDeleteError(stage, error) {
+  if (!import.meta.env.DEV) return
+  console.error('[lists:delete]', {
+    stage,
+    code: error?.code || 'unknown'
+  })
+}
+
+async function deleteListItemAsOwner(listRef, itemRef, ownerUid) {
+  return runTransaction(db, async (transaction) => {
+    const listSnapshot = await transaction.get(listRef)
+    const itemSnapshot = await transaction.get(itemRef)
+
+    if (!listSnapshot.exists()) throw createListError('Liste bulunamadı.', 'lists/not-found')
+    if (listSnapshot.data().ownerUid !== ownerUid) {
+      throw createListError('Bu listeyi yalnızca sahibi silebilir.', 'lists/permission-denied')
+    }
+    if (!itemSnapshot.exists()) return false
+    if (itemSnapshot.data().ownerUid !== ownerUid) {
+      throw createListError('Liste öğesinin sahiplik bilgisi geçersiz.', 'lists/invalid-item-owner')
+    }
+
+    const itemCount = Number(listSnapshot.data().itemCount)
+    if (!Number.isInteger(itemCount) || itemCount < 1) {
+      throw createListError('Liste öğeleri ile yapım sayısı eşleşmiyor.', 'lists/invalid-item-count')
+    }
+
+    transaction.delete(itemRef)
+    transaction.update(listRef, {
+      itemCount: itemCount - 1,
+      updatedAt: serverTimestamp()
+    })
+    return true
+  })
+}
+
+export async function deleteList(listId, actorUid) {
   const listRef = doc(db, 'lists', listId)
+  const authUid = getFirebaseAuth().currentUser?.uid
+  if (!actorUid || !authUid) {
+    throw createListError('Listeyi silmek için giriş yapmalısınız.', 'lists/unauthenticated')
+  }
+  if (authUid !== actorUid) {
+    throw createListError('Aktif oturum bu liste silme isteğiyle eşleşmiyor.', 'lists/permission-denied')
+  }
+
+  let stage = 'listeyi doğrulama'
   try {
     const listSnapshot = await getDoc(listRef)
-    const items = await getDocs(collection(listRef, 'items'))
-    for (let offset = 0; offset < items.docs.length; offset += 400) {
-      const batch = writeBatch(db)
-      items.docs.slice(offset, offset + 400).forEach((item) => batch.delete(item.ref))
-      await batch.commit()
+    if (!listSnapshot.exists()) throw createListError('Liste bulunamadı.', 'lists/not-found')
+    if (listSnapshot.data().ownerUid !== actorUid) {
+      throw createListError('Bu listeyi yalnızca sahibi silebilir.', 'lists/permission-denied')
     }
+
+    // Ortakları önce kaldırmak, silme sırasında başka bir editörün yeni öğe
+    // eklemesini engeller. Liste sahibi bu belgeleri mevcut kurallarla silebilir.
+    stage = 'ortakları temizleme'
     const members = await getDocs(collection(listRef, 'members'))
     for (let offset = 0; offset < members.docs.length; offset += 400) {
       const batch = writeBatch(db)
       members.docs.slice(offset, offset + 400).forEach((item) => batch.delete(item.ref))
       await batch.commit()
     }
-    await deleteDoc(listRef)
-    if (listSnapshot.exists()) {
-      try { const { deleteActivity } = await import('./activities'); await deleteActivity(listSnapshot.data().ownerUid, 'list', listId) }
-      catch (activityError) { console.warn('Liste silindi ancak aktivitesi kaldırılamadı.', activityError) }
+
+    // Rules, her item silimini itemCount değerini aynı transaction içinde bir
+    // azaltan ana liste güncellemesiyle birlikte zorunlu tutuyor.
+    stage = 'liste öğelerini temizleme'
+    while (true) {
+      const items = await getDocs(query(collection(listRef, 'items'), limit(100)))
+      if (items.empty) break
+      for (const item of items.docs) {
+        await deleteListItemAsOwner(listRef, item.ref, actorUid)
+      }
     }
+
+    // Aktiviteyi liste belgesinden önce kaldırarak akışta yetim veri kalmasını önle.
+    stage = 'liste aktivitesini temizleme'
+    try {
+      const { deleteActivity, hasActivity } = await import('./activities')
+      if (await hasActivity('list', listId)) {
+        await deleteActivity(actorUid, 'list', listId)
+      }
+    } catch (error) {
+      throw createListDeleteError(
+        'Liste aktivitesi kaldırılamadığı için liste silinemedi. Lütfen tekrar deneyin.',
+        'lists/activity-delete-failed',
+        error
+      )
+    }
+
+    stage = 'liste belgesini silme'
+    await deleteDoc(listRef)
+    return true
   } catch (error) {
+    logListDeleteError(stage, error)
+    if (String(error?.code || '').startsWith('lists/')) throw error
     throw mapListError(error)
   }
 }

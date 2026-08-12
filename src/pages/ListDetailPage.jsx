@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ContentLikeButton } from '../components/shared/ContentLikeButton'
 import { EmptyState } from '../components/shared/EmptyState'
@@ -33,6 +33,7 @@ export function ListDetailPage() {
   const [form, setForm] = useState({ title: '', description: '', isPublic: true })
   const [pending, setPending] = useState('')
   const [message, setMessage] = useState('')
+  const deletingRef = useRef(false)
   const isOwner = Boolean(user?.uid && list?.ownerUid === user.uid)
   const memberRole = members.find((member) => member.uid === user?.uid)?.role || null
   const currentRole = isOwner ? 'owner' : memberRole
@@ -41,10 +42,11 @@ export function ListDetailPage() {
   useEffect(() => {
     if (authLoading) return undefined
     setLoading(true); setError(''); setMemberError('')
-    const stopList = subscribeToList(id, (value) => { setList(value); setLoading(false) }, (e) => { setError(e.message); setLoading(false) })
-    const stopItems = subscribeToListItems(id, setItems, (e) => setError(e.message))
-    const stopMembers = subscribeToListMembers(id, setMembers, (e) => { setMembers([]); setMemberError(e.message) })
-    return () => { stopList?.(); stopItems?.(); stopMembers?.() }
+    deletingRef.current = false
+    const stopList = subscribeToList(id, (value) => { if (!deletingRef.current) { setList(value); setLoading(false) } }, (e) => { if (!deletingRef.current) { setError(e.message); setLoading(false) } })
+    const stopItems = subscribeToListItems(id, (value) => { if (!deletingRef.current) setItems(value) }, (e) => { if (!deletingRef.current) setError(e.message) })
+    const stopMembers = subscribeToListMembers(id, (value) => { if (!deletingRef.current) setMembers(value) }, (e) => { if (!deletingRef.current) { setMembers([]); setMemberError(e.message) } })
+    return () => { deletingRef.current = true; stopList?.(); stopItems?.(); stopMembers?.() }
   }, [authLoading, id, user?.uid])
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export function ListDetailPage() {
   const openEdit = () => { setForm({ title: list.title, description: list.description, isPublic: list.isPublic }); setMessage(''); setEditing(true) }
   const save = async (event) => { event.preventDefault(); setPending('save'); setMessage(''); try { await updateList(id, form); setEditing(false); setMessage('Liste güncellendi.') } catch (e) { setMessage(e.message) } finally { setPending('') } }
   const remove = async (item) => { setPending(item.id); setMessage(''); try { await removeItemFromList(id, user.uid, item.mediaType, item.mediaId) } catch (e) { setMessage(e.message) } finally { setPending('') } }
-  const destroy = async () => { if (!window.confirm('Bu listeyi ve içindeki tüm yapımları silmek istediğine emin misin?')) return; setPending('delete'); try { await deleteList(id); navigate('/lists', { replace: true }) } catch (e) { setMessage(e.message); setPending('') } }
+  const destroy = async () => { if (!window.confirm('Bu listeyi ve içindeki tüm yapımları silmek istediğine emin misin?')) return; deletingRef.current = true; setPending('delete'); setMessage(''); try { await deleteList(id, user.uid); navigate('/lists', { replace: true }) } catch (e) { deletingRef.current = false; setMessage(e.message); setPending('') } }
   const leave = async () => { setPending('leave'); setMessage(''); try { await leaveSharedList(id, user.uid); setLeaveConfirmOpen(false); navigate('/lists', { replace: true }) } catch (e) { setMessage(e.message) } finally { setPending('') } }
   const openReport = () => { if (!user) { navigate('/login', { state: { from: `${location.pathname}${location.search}` } }); return } setReportOpen(true) }
 
