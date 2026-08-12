@@ -20,7 +20,7 @@ export function Layout({ children }) {
   return <div className="app-shell">{children}</div>
 }
 
-export function TopNav() {
+export function TopNav({ onMenuOpen, mobileMenuOpen = false }) {
   const navigate = useNavigate()
   const { user, profile, authLoading } = useAuth()
   const { blockedUids, mutedUids } = useSafety()
@@ -163,6 +163,18 @@ export function TopNav() {
 
   return (
     <header className="top-nav">
+      <button
+        type="button"
+        className="mobile-menu-trigger"
+        aria-label="Navigasyon menüsünü aç"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="mobile-navigation"
+        onClick={onMenuOpen}
+      >
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+      </button>
       <Link to="/" className="brand-wrap">
         <div className="brand-mark" />
         <div>
@@ -255,7 +267,7 @@ export function TopNav() {
   )
 }
 
-export function Sidebar() {
+export function Sidebar({ variant = 'desktop', onNavigate }) {
   const navigate = useNavigate()
   const { user, profile, profileLoading, loading, authLoading, signOut } = useAuth()
   const { unreadCount, unreadConversationCount } = useNotifications()
@@ -280,6 +292,7 @@ export function Sidebar() {
 
     try {
       await signOut()
+      onNavigate?.()
       navigate('/login', { replace: true })
     } catch (signOutError) {
       setAccountError(signOutError.message || 'Çıkış yapılamadı. Lütfen tekrar deneyin.')
@@ -290,10 +303,10 @@ export function Sidebar() {
   const accountInitial = accountName.trim().charAt(0).toLocaleUpperCase('tr-TR') || 'L'
 
   return (
-    <aside className="sidebar">
+    <div className={`sidebar sidebar--${variant}`}>
       <nav className="side-nav">
         {items.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => `side-item${isActive ? ' active' : ''}`}>
+          <NavLink key={item.to} to={item.to} onClick={onNavigate} className={({ isActive }) => `side-item${isActive ? ' active' : ''}`}>
             <span>{item.label}</span>
             {item.badge ? <span className="notification-nav-badge" aria-label={`${item.badge} ${item.badgeLabel || 'okunmamış bildirim'}`}>{item.badge > 9 ? '9+' : item.badge}</span> : null}
           </NavLink>
@@ -311,7 +324,7 @@ export function Sidebar() {
             <div className="sidebar-account-user">
               <UserAvatar profile={profile} user={user} name={accountName} className="sidebar-account-avatar" />
               <div className="sidebar-account-copy">
-                <strong><Link to={profile?.username ? `/profile/${encodeURIComponent(profile.username)}` : '/profile'}>{accountName}</Link></strong>
+                <strong><Link onClick={onNavigate} to={profile?.username ? `/profile/${encodeURIComponent(profile.username)}` : '/profile'}>{accountName}</Link></strong>
                 {profileLoading ? <span className="account-profile-loading">Profil yükleniyor…</span> : null}
               </div>
             </div>
@@ -327,11 +340,11 @@ export function Sidebar() {
           </>
         ) : (
           <div className="sidebar-account-guest">
-            <Link to="/login" className="sidebar-login-btn">Giriş yap</Link>
-            <Link to="/register" className="sidebar-register-link">Kayıt ol</Link>
+            <Link onClick={onNavigate} to="/login" className="sidebar-login-btn">Giriş yap</Link>
+            <Link onClick={onNavigate} to="/register" className="sidebar-register-link">Kayıt ol</Link>
           </div>
         )}
       </section>
-    </aside>
+    </div>
   )
 }

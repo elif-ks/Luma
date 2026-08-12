@@ -16,6 +16,15 @@ export function SafetyMenu({ targetUid, targetType = 'user', targetId, compact =
   const [report, setReport] = useState(false)
   const [pending, setPending] = useState('')
   const [error, setError] = useState('')
+  const menuId = `safety-menu-${targetType}-${targetId || targetUid}`
+
+  useEffect(() => {
+    const closeOtherMenu = (event) => {
+      if (event.detail !== menuId) setOpen(false)
+    }
+    window.addEventListener('luma:post-actions-open', closeOtherMenu)
+    return () => window.removeEventListener('luma:post-actions-open', closeOtherMenu)
+  }, [menuId])
 
   useEffect(() => {
     if (!open) return undefined
@@ -44,5 +53,5 @@ export function SafetyMenu({ targetUid, targetType = 'user', targetId, compact =
     finally { setPending('') }
   }
 
-  return <span ref={wrapRef} className={`safety-menu-wrap${compact ? ' compact' : ''}`}><button type="button" className="safety-menu-trigger" aria-label="Güvenlik seçenekleri" aria-expanded={open} aria-haspopup="menu" disabled={Boolean(pending)} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((value) => !value) }}>•••</button>{open ? <span className="safety-menu-popover" role="menu">{safety.isBlocked(targetUid) ? <button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => act('unblock')}>Engeli kaldır</button> : <><button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => act('mute')}>{safety.isMuted(targetUid) ? 'Sesi aç' : 'Sessize al'}</button><button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => setConfirmBlock(true)}>Engelle</button></>}{reportable ? <button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => { if (!user) { login(); return } setReport(true); setOpen(false) }}>Şikâyet et</button> : null}</span> : null}{error ? <small className="content-like-error">{error}</small> : null}{confirmBlock ? <Modal title="Kullanıcıyı engelle" onClose={() => setConfirmBlock(false)} footer={<><SecondaryButton onClick={() => setConfirmBlock(false)} disabled={pending === 'block'}>Vazgeç</SecondaryButton><PrimaryButton onClick={block} disabled={pending === 'block'}>{pending === 'block' ? 'Engelleniyor…' : 'Kullanıcıyı engelle'}</PrimaryButton></>}><p>Bu kullanıcı engellendiğinde birbirinizi takip edemez, etkileşim kuramaz ve mesaj gönderemezsiniz. Mevcut takip ilişkileri kaldırılır.</p></Modal> : null}{report ? <ReportModal targetType={targetType} targetId={targetId || targetUid} onClose={() => setReport(false)}/> : null}</span>
+  return <span ref={wrapRef} className={`safety-menu-wrap${compact ? ' compact' : ''}`} onClick={(event) => event.stopPropagation()}><button type="button" className="safety-menu-trigger" aria-label={targetType === 'post' ? 'Gönderi işlemleri' : 'Güvenlik seçenekleri'} aria-expanded={open} aria-haspopup="menu" aria-controls={menuId} disabled={Boolean(pending)} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((value) => !value) }}>•••</button>{open ? <span id={menuId} className="safety-menu-popover" role="menu">{safety.isBlocked(targetUid) ? <button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => act('unblock')}>Engeli kaldır</button> : <><button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => act('mute')}>{safety.isMuted(targetUid) ? 'Sesi aç' : 'Sessize al'}</button><button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => setConfirmBlock(true)}>Engelle</button></>}{reportable ? <button type="button" role="menuitem" disabled={Boolean(pending)} onClick={() => { if (!user) { login(); return } setReport(true); setOpen(false) }}>{targetType === 'post' ? 'Gönderiyi şikâyet et' : 'Şikâyet et'}</button> : null}</span> : null}{error ? <small className="content-like-error">{error}</small> : null}{confirmBlock ? <Modal title="Kullanıcıyı engelle" onClose={() => setConfirmBlock(false)} footer={<><SecondaryButton onClick={() => setConfirmBlock(false)} disabled={pending === 'block'}>Vazgeç</SecondaryButton><PrimaryButton onClick={block} disabled={pending === 'block'}>{pending === 'block' ? 'Engelleniyor…' : 'Kullanıcıyı engelle'}</PrimaryButton></>}><p>Bu kullanıcı engellendiğinde birbirinizi takip edemez, etkileşim kuramaz ve mesaj gönderemezsiniz. Mevcut takip ilişkileri kaldırılır.</p></Modal> : null}{report ? <ReportModal targetType={targetType} targetId={targetId || targetUid} onClose={() => setReport(false)}/> : null}</span>
 }
