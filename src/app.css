@@ -81,11 +81,11 @@
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #ff5e7d, #ff8a4c);
-  box-shadow: 0 10px 24px rgba(255,94,125,0.3);
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  object-fit: contain;
 }
 
 .brand-name {
@@ -2438,12 +2438,11 @@
 }
 
 .auth-brand-mark {
+  display: block;
   flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
-  background: var(--gradient-primary);
-  box-shadow: 0 12px 28px rgba(255, 94, 125, 0.28);
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .auth-card-header h1 {
@@ -2693,7 +2692,8 @@
 @media (max-width: 420px) {
   .top-nav { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; padding: 12px; }
   .mobile-menu-trigger { width: 40px; height: 40px; flex-basis: 40px; }
-  .brand-mark { width: 38px; height: 38px; border-radius: 12px; }
+  .brand-mark { width: 34px; height: 34px; flex-basis: 34px; }
+  .auth-brand-mark { width: 36px; height: 36px; }
   .brand-tag { display: none; }
   .top-nav .profile-pill { padding: 6px; }
   .top-nav .profile-pill > span { display: none; }

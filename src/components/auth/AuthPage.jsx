@@ -6,7 +6,7 @@ export function AuthPage({ title, subtitle, children, footerText, footerLink, fo
     <div className="auth-page-shell">
       <GlassCard className="auth-card">
         <div className="auth-card-header">
-          <div className="auth-brand-mark" />
+          <img className="auth-brand-mark" src="/luma-logo.png" alt="Luma" />
           <div>
             <h1>{title}</h1>
             <p>{subtitle}</p>

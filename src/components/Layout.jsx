@@ -176,7 +176,7 @@ export function TopNav({ onMenuOpen, mobileMenuOpen = false }) {
         <span aria-hidden="true" />
       </button>
       <Link to="/" className="brand-wrap">
-        <div className="brand-mark" />
+        <img className="brand-mark" src="/luma-logo.png" alt="Luma" />
         <div>
           <div className="brand-name">Luma</div>
           <div className="brand-tag">Watch. Write. Share.</div>
